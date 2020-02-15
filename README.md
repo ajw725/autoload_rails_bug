@@ -1,24 +1,42 @@
-# README
+# Reproducing a Rails autoloading concurrency bug
 
-This README would normally document whatever steps are necessary to get the
-application up and running.
+## Github issue
+[LoadError when multiple threads try to load the same namespaced class](https://github.com/rails/rails/issues/33209)
 
-Things you may want to cover:
+## Setting up the application
 
-* Ruby version
+1. clone the repository
+1. `bundle install`
 
-* System dependencies
+## Steps to reproduce
 
-* Configuration
+### From the Rails console
 
-* Database creation
+(this example adapted from [Dimitrios Lisenko](https://github.com/DimitriosLisenko))
 
-* Database initialization
+1. start up a rails console (`bundle exec rails c`)
+1. run `Foo::Bar`, which should be successful
+1. start up a new rails console
+1. run `2.times { Thread.new { Rails.application.executor { Foo::Bar } } }`. this does not fail every time,
+    but it should occasionally fail with either an ArgumentError ("A copy of Foo has been removed from the
+    module tree but is still active!") or a LoadError ("Unable to autoload constant Foo::Bar,
+    expected [...]/app/models/foo/bar.rb to define it").
+    
+### In the Rails server
 
-* How to run the test suite
+1. boot up the application (`bundle exec rails s`)
+1. load the home page (navigate to `localhost:3000`)
+1. again, this doesn't work 100% of the time, but it should occasionally reproduce the error (as long as you
+restart the server before each attempt). once again, the specific error can change between occurrences.
 
-* Services (job queues, cache servers, search engines, etc.)
+### In Sidekiq
 
-* Deployment instructions
+In my testing, this is the most reliable reproduction.
 
-* ...
+1. start redis
+1. boot up the application (`bundle exec rails s`) but do **not** start sidekiq
+1. load the home page (navigate to `localhost:3000`)
+1. start sidekiq (`bundle exec sidekiq`)
+1. when sidekiq starts, it will immediately kick off two identical workers. one will succeed, but the other will
+    fail with one of the errors described above.
+
